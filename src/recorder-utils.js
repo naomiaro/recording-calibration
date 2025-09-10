@@ -47,8 +47,9 @@ export async function calibrateLatency(ctx, recNode, refGain, makePulseBuffer) {
         };
         recNode.port.addEventListener("message", handler);
 
-        // Start recording immediately for calibration
-        recNode.port.postMessage({ type: "startAt", time: ctx.currentTime });
+        const start = ctx.currentTime;
+        const end = start + 0.5;
+        recNode.port.postMessage({ type: "setWindow", start, end });
 
         // Play pulse in 100ms
         const t0 = ctx.currentTime + 0.1;
