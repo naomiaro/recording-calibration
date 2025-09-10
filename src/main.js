@@ -99,18 +99,30 @@ btnCalibrate.onclick = async () => {
         chunkCount = 0;
         $chunks.textContent = "0";
 
+        // const result = await calibrateLatencyRobust(ctx, {
+        //     mode: 'mls',
+        //     mls: { order: 16, repeats: 6, amp: 0.6 },
+        //     preRollMs: 150,
+        //     postRollMs: 300,
+        //     maxLagMs: 300,
+        //     allowNegative: false,
+        //     attempts: 7,
+        //     minScore: 0.2,
+        // });
+
         const result = await calibrateLatencyRobust(ctx, {
-            mode: 'mls',
-            mls: { order: 16, repeats: 6, amp: 0.6 },
-            preRollMs: 150,
-            postRollMs: 300,
-            maxLagMs: 300,
+            mode: 'chirp',
+            chirp: { durationMs: 500, f0: 1500, f1: 8000, amp: 0.6, fadeMs: 8 },
+            maxLagMs: 160,
             allowNegative: false,
             attempts: 7,
-            minScore: 0.2,
+            minScore: 0.3,
         });
 
         console.log(`lag = ${result.lagSamples} samples (${result.lagMs.toFixed(2)} ms), score=${result.score.toFixed(3)}`);
+
+        // Persist latency in seconds for scheduling
+        latencySeconds = result.lagSamples / ctx.sampleRate;
 
         $lat.textContent = `${result.lagMs.toFixed(1)} ms`;
         btnTake.disabled = false;
