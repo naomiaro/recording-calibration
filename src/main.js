@@ -100,11 +100,11 @@ btnCalibrate.onclick = async () => {
         $chunks.textContent = "0";
 
         const result = await calibrateLatencyRobust(ctx, {
-            mode: 'chirp',
-            chirp: { durationMs: 450, f0: 1500, f1: 8000, amp: 0.9, fadeMs: 8 },
+            mode: 'mls',
+            mls: { order: 16, repeats: 6, amp: 0.6 },
             preRollMs: 150,
             postRollMs: 300,
-            maxLagMs: 220,
+            maxLagMs: 300,
             allowNegative: false,
             attempts: 7,
             minScore: 0.2,

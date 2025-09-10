@@ -19,7 +19,7 @@ export async function calibrateLatency(audioCtx, opts = {}) {
         // MLS params
         mls = { order: 16, repeats: 4, amp: 0.35 },
         // Recording window padding
-        preRollMs = 40,
+        preRollMs = 60,
         postRollMs = 180,
         // Correlation search window (must cover expected round trip)
         maxLagMs = 120,
@@ -47,11 +47,10 @@ export async function calibrateLatency(audioCtx, opts = {}) {
 
     // Debug output
     console.log(`Calibration debug: mic length=${mic.length}, ref length=${refPlayed.length}`);
-    const micMin = Math.min(...mic);
-    const micMax = Math.max(...mic);
-    const micRms = Math.sqrt(mic.reduce((a, b) => a + b * b, 0) / mic.length);
-    console.log(`Mic signal stats: min=${micMin.toFixed(3)}, max=${micMax.toFixed(3)}, rms=${micRms.toFixed(3)}`);
-    console.log(`Ref signal stats: min=${Math.min(...refPlayed).toFixed(3)}, max=${Math.max(...refPlayed).toFixed(3)}, rms=${Math.sqrt(refPlayed.reduce((a, b) => a + b * b, 0) / refPlayed.length).toFixed(3)}`);
+    const micStats = computeStats(mic);
+    const refStats = computeStats(refPlayed);
+    console.log(`Mic signal stats: min=${micStats.min.toFixed(3)}, max=${micStats.max.toFixed(3)}, rms=${micStats.rms.toFixed(3)}`);
+    console.log(`Ref signal stats: min=${refStats.min.toFixed(3)}, max=${refStats.max.toFixed(3)}, rms=${refStats.rms.toFixed(3)}`);
 
     // Validate calibration quality
     if (res.score < 0.1) {
@@ -61,7 +60,7 @@ export async function calibrateLatency(audioCtx, opts = {}) {
         console.warn(`Unusually high latency detected (${res.lagMs.toFixed(1)}ms). This may indicate system issues.`);
     }
 
-    return { ...res, micRms, micClipped: (micMin <= -0.98 || micMax >= 0.98) };
+    return { ...res, micRms: micStats.rms, micClipped: (micStats.min <= -0.98 || micStats.max >= 0.98) };
 }
 
 /**
@@ -140,23 +139,21 @@ function highPassIIR(x, sr, cutoffHz = 150) {
 
 /** Logarithmic chirp with short fade in/out to avoid clicks. */
 export function makeLogChirp(sr, durationMs = 120, f0 = 1500, f1 = 8000, amp = 0.5, fadeMs = 6) {
-    const N = Math.max(8, Math.round((durationMs / 1000) * sr));
+    const T = durationMs / 1000;
+    const N = Math.max(8, Math.round(T * sr));
     const y = new Float32Array(N);
+
     const w0 = 2 * Math.PI * f0;
     const w1 = 2 * Math.PI * f1;
-    const K = N / Math.log(w1 / w0); // for log sweep phase
+    const L = Math.log(w1 / w0); // ln(ω1/ω0) == ln(f1/f0)
+
+    // Phase(t) = (ω0 * T / L) * (exp((t/T)*L) - 1)
     for (let n = 0; n < N; n++) {
         const t = n / sr;
-        // log sweep phase ~ w0 * K * (exp(n/K) - 1) scaled into discrete form
-        const ratio = n / (N - 1);
-        const w = w0 * Math.pow(w1 / w0, ratio); // instantaneous angular freq
-        // integrate instantaneous freq approximately (OK for short sweeps)
-        // simpler: phase via cumulative sum approximation
-        // For stability, approximate phase with geometric interpolation:
-        // phase ≈ 2π * f0 * t * ((f1/f0)^(t/T)) / ln(f1/f0) — but we can get
-        // very good results using instantaneous cosine with slow-varying phase:
-        y[n] = Math.cos(2 * Math.PI * (f0 * t + (f1 - f0) * t * ratio)) * amp;
+        const phase = (w0 * T / L) * (Math.exp((t / T) * L) - 1);
+        y[n] = Math.cos(phase) * amp;
     }
+
     applyFades(y, sr, fadeMs);
     return y;
 }
@@ -354,11 +351,11 @@ export function estimateLagNormalized(mic, ref, sampleRate, opts = {}) {
 /* ------------------------- Utilities ------------------------- */
 
 function applyFades(y, sr, fadeMs = 6) {
-    const fadeN = Math.max(1, Math.round((fadeMs / 1000) * sr));
-    for (let i = 0; i < fadeN; i++) {
-        const g = i / fadeN;
-        y[i] *= g;
-        y[y.length - 1 - i] *= g;
+    const M = Math.max(1, Math.round((fadeMs / 1000) * sr));
+    for (let i = 0; i < M; i++) {
+        const w = 0.5 - 0.5 * Math.cos(Math.PI * i / M); // Hann half-window
+        y[i] *= w;
+        y[y.length - 1 - i] *= w;
     }
 }
 
@@ -370,3 +367,15 @@ function zeroMean(a) {
     return a;
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function computeStats(a) {
+    let min = Infinity, max = -Infinity, sumSq = 0;
+    for (let i = 0; i < a.length; i++) {
+        const v = a[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+        sumSq += v * v;
+    }
+    const rms = a.length ? Math.sqrt(sumSq / a.length) : 0;
+    return { min, max, rms };
+}
