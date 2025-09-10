@@ -1,4 +1,6 @@
-import { calibrateLatency, scheduleTake } from "./recorder-utils.js";
+import { scheduleTake } from "./recorder-utils.js";
+
+import { calibrateLatencyRobust } from "./calibrate.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -97,8 +99,20 @@ btnCalibrate.onclick = async () => {
         chunkCount = 0;
         $chunks.textContent = "0";
 
-        latencySeconds = await calibrateLatency(ctx, recNode, refGain, makePulseBuffer);
-        $lat.textContent = `${(latencySeconds * 1000).toFixed(1)} ms`;
+        const result = await calibrateLatencyRobust(ctx, {
+            mode: 'chirp',
+            chirp: { durationMs: 450, f0: 1500, f1: 8000, amp: 0.9, fadeMs: 8 },
+            preRollMs: 150,
+            postRollMs: 300,
+            maxLagMs: 220,
+            allowNegative: false,
+            attempts: 7,
+            minScore: 0.2,
+        });
+
+        console.log(`lag = ${result.lagSamples} samples (${result.lagMs.toFixed(2)} ms), score=${result.score.toFixed(3)}`);
+
+        $lat.textContent = `${result.lagMs.toFixed(1)} ms`;
         btnTake.disabled = false;
     } catch (err) {
         console.error(err);
